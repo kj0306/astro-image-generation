@@ -1,0 +1,51 @@
+# =============================================================================
+# train.sub — HTCondor submit file for astro-image-generation
+#
+# Submit with:   condor_submit train.sub
+# Monitor with:  condor_q
+# Remove with:   condor_rm <JobID>
+# =============================================================================
+
+# ── Executable ────────────────────────────────────────────────────────────────
+# run_train.sh is the shell script HTCondor will execute on the remote node.
+shell = ./run_train.sh
+
+# ── Output, error, and log files ──────────────────────────────────────────────
+# $(Cluster) = batch ID assigned at submission time
+# $(Process) = individual job number (0 here since queue 1)
+log    = logs/train_$(Cluster)_$(Process).log
+output = logs/train_$(Cluster)_$(Process).out
+error  = logs/train_$(Cluster)_$(Process).err
+
+# ── Files to transfer to the execution node ───────────────────────────────────
+# List every file/folder your job needs that isn't in /staging.
+# Large data (images/, big CSVs) should live in /staging — see note below.
+#
+# NOTE: If your images/ folder is > 1 GB, move it to /staging/yourusername/
+# on the access point and reference it from run_train.sh directly
+# (e.g., --images_dir /staging/yourusername/images).
+# In that case, remove "images" from the line below.
+transfer_input_files = \
+    run_train.sh, \
+    train.py, \
+    models/, \
+    Data/, \
+    images/
+
+# Return the checkpoints folder to your access point home dir after the job.
+transfer_output_files = checkpoints
+
+# ── Resource requests ─────────────────────────────────────────────────────────
+# Request 1 GPU — required because train.py uses device="cuda".
+# CHTC will match your job to a node that has at least 1 GPU available.
+request_gpus   = 1
+request_cpus   = 4
+request_memory = 16GB
+request_disk   = 25GB
+
+# ── OS requirement ────────────────────────────────────────────────────────────
+# Restrict to RHEL/Rocky 8 or 9 nodes (most CHTC GPU nodes run one of these).
+requirements = (OpSysMajorVer == 8 || OpSysMajorVer == 9)
+
+# ── Submit 1 job ─────────────────────────────────────────────────────────────
+queue 1
