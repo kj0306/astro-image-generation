@@ -1,0 +1,36 @@
+universe                = vanilla
+executable              = htc/run_train_htc.sh
+
+# High-resource request profile
+request_cpus            = 8
+request_memory          = 64GB
+request_disk            = 200GB
+request_gpus            = 1
+
+should_transfer_files   = YES
+when_to_transfer_output = ON_EXIT
+transfer_input_files    = Data,models,scripts,train.py
+transfer_output_files   = checkpoints,logs
+
+output                  = logs/train_high.$(Cluster).$(Process).out
+error                   = logs/train_high.$(Cluster).$(Process).err
+log                     = logs/train_high.$(Cluster).$(Process).log
+
++WantGPULab             = true
+
+# Per-job arguments:
+# <run_name> <data_csv> <images_dir> <checkpoint_root>
+# <epochs> <image_size> <n_levels> <n_steps> <samples> <lr> <cond_dim> <batch_size>
+arguments = $(run_name) Data/apod_preloaded_dataset.csv images checkpoints $(epochs) $(image_size) $(n_levels) $(n_steps) $(samples) $(lr) $(cond_dim) $(batch_size)
+
+# Includes your requested 4 configs + larger-sample sweeps.
+queue run_name,epochs,image_size,n_levels,n_steps,samples,lr,cond_dim,batch_size from (
+cfg1_50e_96_n4_s8_sm1000_cd256_b32,50,96,4,8,1000,1e-5,256,32
+cfg2_50e_96_n4_s12_sm6000_cd256_b16,50,96,4,12,6000,1e-5,256,16
+cfg3_50e_96_n4_s12_sm6000_cd1024_b16,50,96,4,12,6000,1e-5,1024,16
+cfg4_50e_256_n4_s12_sm6000_cd256_b16,50,256,4,12,6000,1e-5,256,16
+swp_50e_96_n4_s12_sm8000_cd256_b16,50,96,4,12,8000,1e-5,256,16
+swp_50e_96_n4_s12_sm10000_cd256_b16,50,96,4,12,10000,1e-5,256,16
+swp_50e_96_n4_s12_sm12000_cd256_b16,50,96,4,12,12000,1e-5,256,16
+swp_50e_96_n4_s12_sm15000_cd256_b16,50,96,4,12,15000,1e-5,256,16
+)
