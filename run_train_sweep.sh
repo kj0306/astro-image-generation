@@ -1,21 +1,13 @@
 #!/bin/bash
 # =============================================================================
 # run_train_sweep.sh — HTCondor executable for sweep jobs
-# Arguments passed from train_sweep.sub via HTCondor variables:
-#   $1 = run_name
-#   $2 = epochs
-#   $3 = image_size
-#   $4 = n_levels
-#   $5 = n_steps
-#   $6 = samples
-#   $7 = lr
-#   $8 = cond_dim
-#   $9 = batch_size
+# Arguments:
+#   $1=run_name $2=epochs $3=image_size $4=n_levels $5=n_steps
+#   $6=samples  $7=lr     $8=cond_dim   $9=batch_size
 # =============================================================================
 
 set -e
 
-# ── Read arguments ────────────────────────────────────────────────────────────
 RUN_NAME=$1
 EPOCHS=$2
 IMAGE_SIZE=$3
@@ -29,45 +21,74 @@ BATCH_SIZE=$9
 echo "============================================================"
 echo "[INFO] Job started at:     $(date)"
 echo "[INFO] Running on host:    $(hostname)"
-echo "[INFO] Working directory:  $(pwd)"
 echo "[INFO] Run name:           $RUN_NAME"
-echo "------------------------------------------------------------"
-echo "[INFO] Hyperparameters:"
-echo "       epochs     = $EPOCHS"
-echo "       image_size = $IMAGE_SIZE"
-echo "       n_levels   = $N_LEVELS"
-echo "       n_steps    = $N_STEPS"
-echo "       samples    = $SAMPLES"
-echo "       lr         = $LR"
-echo "       cond_dim   = $COND_DIM"
-echo "       batch_size = $BATCH_SIZE"
+echo "[INFO] epochs=$EPOCHS image_size=$IMAGE_SIZE n_levels=$N_LEVELS n_steps=$N_STEPS"
+echo "[INFO] samples=$SAMPLES lr=$LR cond_dim=$COND_DIM batch_size=$BATCH_SIZE"
 echo "============================================================"
+echo "[INFO] Python: $(python3 --version)"
+echo "[INFO] Working dir: $(pwd)"
 
-# ── Python check ─────────────────────────────────────────────────────────────
-echo "[INFO] Python binary:  $(which python3)"
-echo "[INFO] Python version: $(python3 --version)"
-
-# ── Verify critical files ─────────────────────────────────────────────────────
-echo "[INFO] Checking required files..."
-for f in train.py Data/apod_preloaded_dataset.csv; do
-    if [ ! -e "$f" ]; then
-        echo "[ERROR] Required file missing: $f"
-        exit 1
-    else
-        echo "[OK]   Found: $f"
-    fi
-done
-
-if [ ! -d "Data/images" ]; then
-    echo "[ERROR] Data/images directory not found."
-    exit 1
+# ── Rebuild Data/ module structure ────────────────────────────────────────────
+# HTCondor transfers files flat — we need to put dataset.py back into Data/
+echo "[INFO] Setting up Data/ module structure..."
+mkdir -p Data
+if [ -f "dataset.py" ]; then
+    cp dataset.py Data/dataset.py
+    echo "[OK] Copied dataset.py → Data/dataset.py"
+elif [ -f "Data/dataset.py" ]; then
+    echo "[OK] Data/dataset.py already in place"
 else
-    IMG_COUNT=$(ls Data/images/ | wc -l)
-    echo "[OK]   Data/images/ found — $IMG_COUNT files"
+    echo "[ERROR] dataset.py not found anywhere!"
+    exit 1
 fi
+touch Data/__init__.py
+echo "[OK] Data/ module ready"
+
+# ── Verify CSV ────────────────────────────────────────────────────────────────
+if [ ! -f "apod_preloaded_dataset.csv" ]; then
+    echo "[ERROR] CSV not found: apod_preloaded_dataset.csv"
+    exit 1
+fi
+echo "[OK] CSV found"
+
+# ── Download images on execution node ────────────────────────────────────────
+echo "[INFO] Downloading training images (this takes ~45 mins)..."
+mkdir -p Data/images
+
+python3 - << 'PYEOF'
+import pandas as pd
+import requests
+import os
+from tqdm import tqdm
+
+df = pd.read_csv("./apod_preloaded_dataset.csv")
+df = df[df["split"] == "train"].dropna(subset=["best_url"])
+print(f"[INFO] Downloading up to {len(df)} training images...")
+
+save_dir = "./Data/images"
+os.makedirs(save_dir, exist_ok=True)
+
+failed = 0
+for idx, row in tqdm(df.iterrows(), total=len(df)):
+    img_id = int(row['img_index'])
+    save_path = f"{save_dir}/{img_id}.jpg"
+    if os.path.exists(save_path):
+        continue
+    try:
+        response = requests.get(row["best_url"], timeout=10)
+        response.raise_for_status()
+        with open(save_path, "wb") as f:
+            f.write(response.content)
+    except:
+        failed += 1
+
+count = len(os.listdir(save_dir))
+print(f"[INFO] Images ready: {count}, failed: {failed}")
+PYEOF
+
+echo "[OK] Image download complete"
 
 # ── GPU check ─────────────────────────────────────────────────────────────────
-echo "[INFO] Checking GPU..."
 python3 -c "
 import torch
 print(f'[INFO] CUDA available: {torch.cuda.is_available()}')
@@ -75,20 +96,19 @@ if torch.cuda.is_available():
     print(f'[INFO] GPU: {torch.cuda.get_device_name(0)}')
     print(f'[INFO] VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB')
 else:
-    print('[WARNING] No GPU — training will be slow')
+    print('[WARNING] No GPU found')
 "
 
-# ── Pre-create checkpoints folder BEFORE training starts ─────────────────────
-# This ensures HTCondor can always transfer it back even if training crashes
+# ── Pre-create checkpoints folder ─────────────────────────────────────────────
 mkdir -p checkpoints
-echo "[INFO] checkpoints/ folder ready"
+echo "[INFO] checkpoints/ ready"
 
 # ── Run training ──────────────────────────────────────────────────────────────
 echo "[INFO] Launching train.py for run: $RUN_NAME"
 echo "============================================================"
 
 python3 train.py \
-    --data_csv        ./Data/apod_preloaded_dataset.csv \
+    --data_csv        ./apod_preloaded_dataset.csv \
     --images_dir      ./Data/images \
     --checkpoint_dir  ./checkpoints \
     --epochs          $EPOCHS \
@@ -104,10 +124,8 @@ python3 train.py \
     --llm_ckpt_name   ${RUN_NAME}-llm-ckpt.pth
 
 EXIT_CODE=$?
-
 echo "============================================================"
 echo "[INFO] train.py exited with code: $EXIT_CODE"
 echo "[INFO] Job finished at: $(date)"
 echo "============================================================"
-
 exit $EXIT_CODE

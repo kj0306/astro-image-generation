@@ -190,7 +190,7 @@ if __name__ == '__main__':
     print(f"[INFO] CSV loaded — shape: {nasa.shape}", flush=True)
 
     if 'split' not in nasa.columns:
-        raise ValueError("[ERROR] CSV has no 'split' column. Cannot separate train set.")
+        raise ValueError("[ERROR] CSV has no 'split' column.")
     nasa_train = nasa[nasa.split == 'train']
     print(f"[INFO] Training rows before filtering: {len(nasa_train)}", flush=True)
 
