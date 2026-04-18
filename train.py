@@ -1,7 +1,5 @@
 from Data.dataset import AstroDataset
 from models.llm_encoder import TextEncoder
-
-# Assuming you saved the Glow architecture in glow_model.py
 from models.flow_model import GlowModel
 
 from tqdm import tqdm
@@ -12,6 +10,26 @@ import argparse
 from torch.utils.data import DataLoader
 from time import time as tick
 import datetime
+
+
+def filter_missing_images(df, images_dir):
+    """Remove rows where the image file does not exist on disk."""
+    print(f"[INFO] Checking which images exist in {images_dir}...", flush=True)
+    valid_indices = []
+    for _, row in df.iterrows():
+        img_id = str(int(row['img_index']))
+        exists = any(
+            os.path.exists(f"{images_dir}/{img_id}{ext}")
+            for ext in ['.jpg', '.png', '.jpeg']
+        )
+        if exists:
+            valid_indices.append(row.name)
+
+    df_filtered = df.loc[valid_indices].reset_index(drop=True)
+    removed = len(df) - len(df_filtered)
+    print(f"[INFO] Images found:   {len(df_filtered)}", flush=True)
+    print(f"[INFO] Images missing: {removed} (skipped)", flush=True)
+    return df_filtered
 
 
 def train(
@@ -61,19 +79,17 @@ def train(
             images = images + torch.rand_like(images) / 256.0
             texts = list(texts)
 
-            context = text_enc(texts)  # [B, 128]
+            context = text_enc(texts)
             loss = -flow.log_prob(images, context).mean()
 
             optimizer.zero_grad()
             loss.backward()
 
-            # Gradient clipping
             torch.nn.utils.clip_grad_norm_(flow.parameters(), 1.0)
             optimizer.step()
 
             total_loss += loss.item()
 
-            # Debug: print first batch of every 10th epoch to confirm data is flowing
             if batch_idx == 0 and epoch % 10 == 0:
                 print(
                     f"[DEBUG] Epoch {epoch+1} | Batch 0 | "
@@ -176,11 +192,17 @@ if __name__ == '__main__':
     if 'split' not in nasa.columns:
         raise ValueError("[ERROR] CSV has no 'split' column. Cannot separate train set.")
     nasa_train = nasa[nasa.split == 'train']
-    print(f"[INFO] Training rows: {len(nasa_train)}", flush=True)
+    print(f"[INFO] Training rows before filtering: {len(nasa_train)}", flush=True)
 
     if not os.path.isdir(args.images_dir):
         raise FileNotFoundError(f"[ERROR] Images directory not found: {args.images_dir}")
-    print(f"[INFO] Images dir '{args.images_dir}' confirmed present", flush=True)
+
+    # ── Filter out missing images ─────────────────────────────────────────────
+    nasa_train = filter_missing_images(nasa_train, args.images_dir)
+    print(f"[INFO] Training rows after filtering: {len(nasa_train)}", flush=True)
+
+    if len(nasa_train) == 0:
+        raise RuntimeError("[ERROR] No valid training images found after filtering!")
 
     # ── Train ────────────────────────────────────────────────────────────────
     t0 = tick()
