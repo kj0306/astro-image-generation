@@ -78,6 +78,11 @@ else:
     print('[WARNING] No GPU — training will be slow')
 "
 
+# ── Pre-create checkpoints folder BEFORE training starts ─────────────────────
+# This ensures HTCondor can always transfer it back even if training crashes
+mkdir -p checkpoints
+echo "[INFO] checkpoints/ folder ready"
+
 # ── Run training ──────────────────────────────────────────────────────────────
 echo "[INFO] Launching train.py for run: $RUN_NAME"
 echo "============================================================"
