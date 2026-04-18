@@ -1,0 +1,25 @@
+# Checkpoints
+checkpoints/
+test_checkpoints/
+
+# Images
+Data/images/
+Data/__pycache__/
+
+# Logs
+logs/
+
+# Containers
+*.sif
+*.def
+container_packages/
+
+# Python cache
+__pycache__/
+models/__pycache__/
+*.pyc
+*.pyo
+
+# Misc
+train.log
+astro-image-generation/

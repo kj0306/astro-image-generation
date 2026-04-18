@@ -1,11 +1,4 @@
 #!/bin/bash
-# =============================================================================
-# run_train_sweep.sh — HTCondor executable for sweep jobs
-# Arguments:
-#   $1=run_name $2=epochs $3=image_size $4=n_levels $5=n_steps
-#   $6=samples  $7=lr     $8=cond_dim   $9=batch_size
-# =============================================================================
-
 set -e
 
 RUN_NAME=$1
@@ -27,32 +20,30 @@ echo "[INFO] samples=$SAMPLES lr=$LR cond_dim=$COND_DIM batch_size=$BATCH_SIZE"
 echo "============================================================"
 echo "[INFO] Python: $(python3 --version)"
 echo "[INFO] Working dir: $(pwd)"
+echo "[INFO] Files present: $(ls)"
 
 # ── Rebuild Data/ module structure ────────────────────────────────────────────
-# HTCondor transfers files flat — we need to put dataset.py back into Data/
 echo "[INFO] Setting up Data/ module structure..."
 mkdir -p Data
-if [ -f "dataset.py" ]; then
-    cp dataset.py Data/dataset.py
-    echo "[OK] Copied dataset.py → Data/dataset.py"
-elif [ -f "Data/dataset.py" ]; then
-    echo "[OK] Data/dataset.py already in place"
-else
-    echo "[ERROR] dataset.py not found anywhere!"
-    exit 1
-fi
+[ -f "dataset.py" ] && cp dataset.py Data/dataset.py
 touch Data/__init__.py
 echo "[OK] Data/ module ready"
 
+# ── Rebuild models/ module structure ─────────────────────────────────────────
+echo "[INFO] Setting up models/ module structure..."
+mkdir -p models
+[ -f "llm_encoder.py" ] && cp llm_encoder.py models/llm_encoder.py
+[ -f "flow_model.py" ]  && cp flow_model.py  models/flow_model.py
+touch models/__init__.py
+echo "[OK] models/ module ready"
+echo "[INFO] models/ contains: $(ls models/)"
+
 # ── Verify CSV ────────────────────────────────────────────────────────────────
-if [ ! -f "apod_preloaded_dataset.csv" ]; then
-    echo "[ERROR] CSV not found: apod_preloaded_dataset.csv"
-    exit 1
-fi
+[ ! -f "apod_preloaded_dataset.csv" ] && echo "[ERROR] CSV not found" && exit 1
 echo "[OK] CSV found"
 
-# ── Download images on execution node ────────────────────────────────────────
-echo "[INFO] Downloading training images (this takes ~45 mins)..."
+# ── Download images ───────────────────────────────────────────────────────────
+echo "[INFO] Downloading training images..."
 mkdir -p Data/images
 
 python3 - << 'PYEOF'
@@ -95,11 +86,9 @@ print(f'[INFO] CUDA available: {torch.cuda.is_available()}')
 if torch.cuda.is_available():
     print(f'[INFO] GPU: {torch.cuda.get_device_name(0)}')
     print(f'[INFO] VRAM: {torch.cuda.get_device_properties(0).total_memory / 1e9:.1f} GB')
-else:
-    print('[WARNING] No GPU found')
 "
 
-# ── Pre-create checkpoints folder ─────────────────────────────────────────────
+# ── Pre-create checkpoints ────────────────────────────────────────────────────
 mkdir -p checkpoints
 echo "[INFO] checkpoints/ ready"
 

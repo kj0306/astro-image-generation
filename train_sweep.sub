@@ -1,11 +1,3 @@
-# =============================================================================
-# train_sweep.sub — HTCondor sweep submit file with Apptainer container
-#
-# Submit with:   condor_submit train_sweep.sub
-# Monitor with:  condor_q
-# Remove all:    condor_rm <ClusterID>
-# =============================================================================
-
 universe = container
 container_image = ./astro-pytorch.sif
 
@@ -15,10 +7,8 @@ log    = logs/$(run_name)_$(Cluster)_$(Process).log
 output = logs/$(run_name)_$(Cluster)_$(Process).out
 error  = logs/$(run_name)_$(Cluster)_$(Process).err
 
-# Transfer container + scripts + dataset.py only (NOT images — downloaded on node)
-transfer_input_files = run_train_sweep.sh, train.py, models/, Data/apod_preloaded_dataset.csv, Data/dataset.py, astro-pytorch.sif
+transfer_input_files = run_train_sweep.sh, train.py, models/llm_encoder.py, models/flow_model.py, Data/apod_preloaded_dataset.csv, Data/dataset.py, astro-pytorch.sif
 
-# Return checkpoints folder after each job finishes
 transfer_output_files = checkpoints
 
 request_gpus   = 1
@@ -28,10 +18,6 @@ request_disk   = 30GB
 
 requirements = (OpSysMajorVer == 8 || OpSysMajorVer == 9)
 
-# =============================================================================
-# Sweep table — each row is one job
-# Columns: run_name, epochs, image_size, n_levels, n_steps, samples, lr, cond_dim, batch_size
-# =============================================================================
 queue run_name, epochs, image_size, n_levels, n_steps, samples, lr, cond_dim, batch_size from (
     config1,  50, 224, 3, 4, 6000, 1e-5,  256, 16
     config2,  80, 224, 3, 5, 8000, 1e-5, 1024,  4
